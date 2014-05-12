@@ -1,0 +1,556 @@
+/*
+ * fuseflt - A FUSE filesystem with file conversion filters
+ *
+ * Copyright (c) 2007 Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ *
+ * Compilation:
+ *
+ * gcc -Wall `pkg-config fuse --cflags --libs` -lcfg+ fuseflt.c -o fuseflt
+ */
+
+
+
+#define DEBUG		1
+
+#define FDC_MAX_AGE	120
+#define FDC_CHK_INT	5
+
+
+
+#define _GNU_SOURCE
+
+#define FUSE_USE_VERSION 26
+
+#include <cfg+.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <fuse.h>
+#include <pthread.h>
+#include <search.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+
+
+static char *src = NULL;
+
+
+
+#define ADJPATH		char t[PATH_MAX + 1]; \
+			strncpy(t, src, PATH_MAX); \
+			strncat(t, path, PATH_MAX - strlen(src)); \
+			path = t;
+#define EXTPATH		int f __attribute__ ((unused)) = flt_path((char *)path);
+#define TRYERR(c) 	int res = (c); \
+			if (res == -1) \
+				return -errno;
+#define TRYRET(c)	TRYERR(c) \
+			return 0;
+
+#if DEBUG
+#define DBGMSG(M, ...)	fprintf(stderr, "%s:%s:%i " M "\n", __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__); fflush(stderr);
+#else
+#define DBGMSG(M, ...)
+#endif
+
+
+
+static char **flt_in, **flt_out, **flt_cmd, **ext_in, **ext_out;
+
+
+
+static int flt_path(char *path)
+{
+	int i = 0;
+	int l = strlen(path);
+	int r;
+	struct stat st;
+
+	if (stat(path, &st) == 0)
+		return -1;
+
+	while ((flt_in[i] != NULL) && (flt_out[i] != NULL) && (flt_cmd[i] != NULL)) {
+		char t[PATH_MAX + 1];
+		int ixl = strlen(flt_in[i]);
+		int oxl = strlen(flt_out[i]);
+
+		if (((l - oxl) < 1) || (path[l - oxl - 1] == '/') ||
+				((l - oxl + ixl) > PATH_MAX)) {
+			++i;
+			continue;
+		}
+
+		if (strncmp(path + l - oxl, flt_out[i], oxl) != 0) {
+			++i;
+			continue;
+		}
+		strncpy(t, path, PATH_MAX);
+		t[l - oxl] = '\0';
+		strncat(t, flt_in[i], PATH_MAX - l + oxl);
+
+		r = stat(t, &st);
+		if ((r == 0) && ((S_ISREG(st.st_mode)) ||
+				((ixl == 0) && (oxl == 0)))) {
+			strncpy(path, t, PATH_MAX);
+			return i;
+		}
+
+		++i;
+	}
+
+	return -1;
+}
+
+
+
+static void *fdc = NULL;
+
+static pthread_t fdc_expire_thread;
+static pthread_mutex_t fdc_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static int fdc_max_age = FDC_MAX_AGE;
+static int fdc_chk_int = FDC_CHK_INT;
+
+typedef struct __fdcent_t {
+	char path[PATH_MAX];
+	struct timeval et;
+	int fd;
+} fdcent_t;
+
+/* Expiration threshold */
+static struct timeval tt;
+
+/* A temporary binary tree */
+static void *ttmp = NULL;
+
+static int fdcentcmp(const void *n1, const void *n2)
+{
+	return strncmp(((const fdcent_t *)n1)->path,
+		((const fdcent_t *)n2)->path, PATH_MAX);
+}
+
+static int fdc_open(const char *path)
+{
+	int rfd;
+        char *vpath = strdup(path);
+	fdcent_t *fdcent, **fdcres, fdctmp;
+
+	ADJPATH
+	EXTPATH
+
+	/* Search the file descriptor cache */
+	strncpy(fdctmp.path, vpath, PATH_MAX);
+	pthread_mutex_lock(&fdc_mutex);
+	fdcres = tfind(&fdctmp, &fdc, fdcentcmp);
+	if (fdcres != NULL) {
+		DBGMSG("fdc: retrieve %s", vpath);
+
+		rfd = dup((*fdcres)->fd);
+		gettimeofday(&((*fdcres)->et), NULL);
+
+		pthread_mutex_unlock(&fdc_mutex);
+
+		free(vpath);
+		return rfd;
+	}
+	pthread_mutex_unlock(&fdc_mutex);
+
+	TRYERR(open(path, O_RDONLY))
+	if ((f < 0) || (strlen(flt_cmd[f]) == 0))
+		rfd = res;
+	else {
+		int ifd = res;
+
+		char tfn[] = "/tmp/fuseflt.XXXXXX";
+		int ofd = mkstemp(tfn);
+		unlink(tfn);
+
+		if (ofd == -1) {
+			close(ifd);
+			free(vpath);
+			return -errno;
+		}
+
+		pid_t pid = fork();
+		if (pid == -1) {
+			close(ifd);
+			free(vpath);
+			return -errno;
+		} else if (pid != 0) {
+			int ws;
+
+			res = waitpid(pid, &ws, 0);
+			close(ifd);
+			if (res == -1) {
+				int e = errno;
+				close(ofd);
+				free(vpath);
+				return -e;
+			}
+		} else {
+			dup2(ifd, fileno(stdin));
+			dup2(ofd, fileno(stdout));
+			res = execlp("/bin/sh", "/bin/sh", "-c", flt_cmd[f], (char *)NULL);
+			exit(errno);
+		}
+
+		fsync(ofd);
+		lseek(ofd, 0, SEEK_SET);
+		fcntl(ofd, F_SETFL, O_RDONLY);
+
+		rfd = ofd;
+	}
+
+	/* Prepare the file descriptor cache entry */
+	fdcent = malloc(sizeof(*fdcent));
+	if (fdcent == NULL) {
+		int e = errno;
+		close(rfd);
+		free(vpath);
+		return -e;
+	}
+	strncpy(fdcent->path, vpath, PATH_MAX);
+	gettimeofday(&(fdcent->et), NULL);
+	fdcent->fd = rfd;
+
+	/* Cache the file descriptor for future use */
+	DBGMSG("fdc: insert %s", vpath);
+	pthread_mutex_lock(&fdc_mutex);
+	fdcres = tsearch(fdcent, &fdc, fdcentcmp);
+	if (fdcres == NULL) {
+		int e = errno;
+		free(fdcent);
+		close(rfd);
+		free(vpath);
+
+		pthread_mutex_unlock(&fdc_mutex);
+		return -e;
+	} else if (*fdcres != fdcent) {
+		(*fdcres)->et = fdcent->et;
+		close((*fdcres)->fd);
+		(*fdcres)->fd = fdcent->fd;
+		free(fdcent);
+	}
+	pthread_mutex_unlock(&fdc_mutex);
+
+	free(vpath);
+	return dup(rfd);
+}
+
+static void fdc_walk_find_stale(const void *p, const VISIT v, const int d)
+{
+	if ((v == endorder) || (v == leaf))
+		if ((*((fdcent_t **)p))->et.tv_sec < tt.tv_sec) {
+			DBGMSG("fdc: expiration mark %s", (*((fdcent_t **)p))->path);
+			tsearch(*((fdcent_t **)p), &ttmp, fdcentcmp);
+		}
+}
+
+static void fdc_walk_delete_stale(const void *p, const VISIT v, const int d)
+{
+	if ((v == endorder) || (v == leaf))
+		tdelete(*((fdcent_t **)p), &fdc, fdcentcmp);
+}
+
+static void fdc_free(void *p) {
+	DBGMSG("fdc: expire %s", ((fdcent_t *)p)->path);
+	close(((fdcent_t *)p)->fd);
+	free(p);
+}
+
+static void *fdc_expire(void *arg)
+{
+	while (1) {
+		sleep(fdc_chk_int);
+
+		DBGMSG("fdc: expiration check [i=%i,m=%i]", fdc_chk_int, fdc_max_age);
+
+		gettimeofday(&tt, NULL);
+		tt.tv_sec -= fdc_max_age;
+
+		pthread_mutex_lock(&fdc_mutex);
+		twalk(fdc, fdc_walk_find_stale);
+		twalk(ttmp, fdc_walk_delete_stale);
+		pthread_mutex_unlock(&fdc_mutex);
+
+		tdestroy(ttmp, fdc_free);
+		ttmp = NULL;
+	}
+
+	return NULL;
+}
+
+
+
+static int flt_getattr(const char *path, struct stat *stbuf)
+{
+	int fd = fdc_open(path);
+	if (fd < 0)
+		return fd;
+
+	int res = fstat(fd, stbuf);
+	if (res < 0) {
+		int e = errno;
+		close(fd);
+		return -e;
+	}
+
+	close(fd);
+	return 0;
+}
+
+static int flt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
+{
+	TRYRET(fstat(fi->fh, stbuf))
+}
+
+static int flt_access(const char *path, int mask)
+{
+	ADJPATH
+	EXTPATH
+	TRYRET(access(path, mask))
+}
+
+static int flt_readlink(const char *path, char *buf, size_t size)
+{
+	ADJPATH
+	EXTPATH
+	TRYERR(readlink(path, buf, size - 1))
+
+	buf[res] = '\0';
+	return 0;
+}
+
+static int flt_opendir(const char *path, struct fuse_file_info *fi)
+{
+	ADJPATH
+
+	DIR *dp = opendir(path);
+	if (dp == NULL)
+    		return -errno;
+
+	fi->fh = (unsigned long) dp;
+	return 0;
+}
+
+static int flt_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+    		off_t offset, struct fuse_file_info *fi)
+{
+	DIR *dp = (DIR *) (uintptr_t) fi->fh;
+	struct dirent *de;
+	struct stat st;
+
+	seekdir(dp, offset);
+	while ((de = readdir(dp)) != NULL) {
+		fstatat(dirfd(dp), de->d_name, &st, 0);
+
+		if (S_ISREG(st.st_mode)) {
+			int i = 0;
+
+			int l = strlen(de->d_name);
+			while ((ext_in[i] != NULL) && (ext_out[i] != NULL)) {
+				int ixl = strlen(ext_in[i]);
+				int oxl = strlen(ext_out[i]);
+				
+				if (((l - ixl) < 1) || ((l - ixl + oxl) > NAME_MAX) ||
+						(strncmp(de->d_name + l - ixl, ext_in[i], ixl) != 0)) {
+					++i;
+					continue;
+				}
+				
+				de->d_name[l - ixl] = '\0';
+				strncat(de->d_name, flt_out[i], NAME_MAX - l + ixl);
+				
+				/* Avoid duplicate filenames */
+				if (fstatat(dirfd(dp), de->d_name, &st, 0) == 0) {
+					/* Reverse the name change */
+					de->d_name[l - ixl] = '\0';
+					strncat(de->d_name, flt_in[i], NAME_MAX - l + ixl);
+				}
+				break;
+			}
+		}
+
+        	memset(&st, 0, sizeof(st));
+        	st.st_ino = de->d_ino;
+        	st.st_mode = de->d_type << 12;
+        	if (filler(buf, de->d_name, &st, telldir(dp)))
+        		break;
+	}
+
+	return 0;
+}
+
+static int flt_releasedir(const char *path, struct fuse_file_info *fi)
+{
+	closedir((DIR*) (uintptr_t) fi->fh);
+	return 0;
+}
+
+static int flt_open(const char *path, struct fuse_file_info *fi)
+{
+	int fd = fdc_open(path);
+	if (fd < 0)
+		return fd;
+
+	fi->fh = fd;
+
+	return 0;
+}
+
+static int flt_read(const char *path, char *buf, size_t size, off_t offset,
+                    struct fuse_file_info *fi)
+{
+	TRYERR(pread(fi->fh, buf, size, offset))
+	return res;
+}
+
+static int flt_statfs(const char *path, struct statvfs *stbuf)
+{
+	ADJPATH
+	EXTPATH
+	TRYRET(statvfs(path, stbuf))
+}
+
+static int flt_flush(const char *path, struct fuse_file_info *fi)
+{
+	TRYRET(close(dup(fi->fh)))
+}
+
+static int flt_release(const char *path, struct fuse_file_info *fi)
+{
+	close(fi->fh);
+	return 0;
+}
+
+
+
+static struct fuse_operations flt_oper = {
+	.getattr	= flt_getattr,
+	.fgetattr	= flt_fgetattr,
+	.access		= flt_access,
+	.readlink	= flt_readlink,
+	.opendir	= flt_opendir,
+	.readdir	= flt_readdir,
+	.releasedir	= flt_releasedir,
+	.open		= flt_open,
+	.read		= flt_read,
+	.statfs		= flt_statfs,
+	.flush		= flt_flush,
+	.release	= flt_release,
+};
+
+
+
+int main(int argc, char *argv[])
+{
+	int cwdfd, i, o, pargc = argc;
+	char **pargv;
+
+
+	cwdfd = open(".", O_RDONLY);
+
+	pargv = malloc(argc * sizeof(char *));
+	if (pargv == NULL) {
+		perror("Command line argument processing failed");
+		return errno;
+	}
+	pargv[0] = argv[0];
+
+
+	for (i = 1; i < (argc); ++i)
+		if (strcmp("-h", argv[i]) == 0) {
+			argc = 1;
+			break;
+		}
+
+	if (argc < 4) {
+		printf("\nfuseflt %s - A FUSE filesystem with file conversion filters\n"
+		       "Copyright (c) 2007 Theodoros V. Kalamatianos <nyb@users.sourceforge.net>\n\n",
+		       VERSION);
+
+		pargv[0] = malloc(strlen(argv[0]) + strlen(" configfile sourcedir") + 1);
+		if (pargv[0] == NULL) {
+			perror("Command line argument processing failed");
+			return errno;
+		}
+
+		sprintf(pargv[0],"%s%s", argv[0], " configfile sourcedir");
+
+		pargv[1] = "-h";
+		pargc = 2;
+	} else {
+		int f = 0;
+		for (i = 1; i < argc; ++i) {
+			if ((f == 0) && (argv[i][0] != '-')) {
+				CFG_CONTEXT con;
+				int ret;
+				
+				struct cfg_option options[] = {
+					{NULL, '\0', "cache_chk_int", CFG_INT, (void *) &fdc_chk_int, 0},
+					{NULL, '\0', "cache_max_age", CFG_INT, (void *) &fdc_max_age, 0},
+
+					{NULL, '\0', "flt_in", CFG_STR+CFG_MULTI, (void *) &flt_in, 0},
+					{NULL, '\0', "flt_out", CFG_STR+CFG_MULTI, (void *) &flt_out, 0},
+					{NULL, '\0', "flt_cmd", CFG_STR+CFG_MULTI, (void *) &flt_cmd, 0},
+					{NULL, '\0', "ext_in", CFG_STR+CFG_MULTI, (void *) &ext_in, 0},
+					{NULL, '\0', "ext_out", CFG_STR+CFG_MULTI, (void *) &ext_out, 0},
+
+					CFG_END_OF_LIST
+				};
+				
+				con = cfg_get_context(options);
+				if (con == NULL) {
+					perror("Configuration file processing failed");
+					return errno;
+				}
+				
+				cfg_set_cfgfile_context(con, 0, -1, argv[i]);
+				
+				ret = cfg_parse(con);
+				if (ret != CFG_OK) {
+					fprintf(stderr, "Configuration file processing failed: ");
+					cfg_fprint_error(con, stderr);
+					fprintf(stderr, "\n");
+                    			return ret < 0 ? -ret : ret;
+            			}
+
+				pargc--;
+				++f;
+				continue;
+			} else if ((f == 1) && (argv[i][0] != '-')) {
+				o = chdir(argv[i]);
+				if (o == -1) {
+					perror("Cannot enter source directory");
+					return errno;
+				}
+				src = get_current_dir_name();
+				fchdir(cwdfd);
+
+				pargc--;
+				++f;
+				continue;
+			}
+
+			pargv[i - f] = argv[i];
+		}
+	}
+
+	close(cwdfd);
+	umask(077);
+
+	/* The file descriptor cache expiry thread */
+	pthread_create(&fdc_expire_thread, NULL, fdc_expire, NULL);
+
+	return fuse_main(pargc, pargv, &flt_oper, NULL);
+}

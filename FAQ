@@ -1,0 +1,78 @@
+* Why this FUSE module ?
+
+Because I wanted to compress several hundred megabytes of documentation on my
+system, but Apache can't serve bzip2-compressed files and my installed version
+of Moziila can't read compressed .html files at all. Oh, and lynx breaks when
+the cross-file links are not updated with the compressed filenames...
+
+So I needed something to transparently uncompress files and possibly perform
+other processing as well, like converting PDF files to plain text. I decided to
+built a generic FUSE module that will convert file contents as needed, based on
+a configuration file.
+
+
+* What about other modules ?
+
+I had a look at the following:
+
+- fuse.gunzip:
+    pros: er... it works? at least that's what the author says. I never actually
+	tried it. It apparently performs extensive caching.
+    cons: it requires the source directory to be prepared with a custom utility,
+	that, among other things, messes up the reported source file sizes. It
+	only supports a gzip-based compression.
+
+- yacufs/convertfs:
+    pros: caching, support for user-defined filters.
+    cons: requires a cache directory, the filters are defined in the command
+	line, rather than in a configuration file.
+
+
+* What does the name mean ?
+
+FUSE FiLTer. Not very imaginative, I know...
+
+
+* Does it work ?
+
+Some minimal testing revealed no problems. I am planning to use it extensively
+for my documentation directories, so it will receive a lot more testing.
+
+
+* How does it work ?
+
+To find out read the `Internals' section in the README. Then read the source 
+code itself for details.
+
+
+* I found a bug !
+
+Good! Now report it at <nyb@users.sourceforge.net>... or even better fix it and 
+send a patch!
+
+
+* How can I help ?
+
+- Test it.
+- Report any bugs.
+- Ideas, suggestions e.t.c. are welcome. Patches even more!
+- Occasionally you may drop a line to say that it worked for you. Positive
+  feedback is just as important.
+
+
+* I don't like your coding style
+
+I don't like yours either.
+
+
+* Who wrote it ?
+
+Me, Theodoros Kalamatianos, a student at the department of Electric and Computer 
+Engineering of the National Technical University of Athens. For purposes related 
+to fuseflt I may be reached at <nyb@users.sourceforge.net>.
+
+
+* Under what license is it released ?
+
+Naturally, the GNU General Public License. The full text of the GPL is included 
+in the fuseflt tarball.

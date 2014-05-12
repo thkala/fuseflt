@@ -1,0 +1,167 @@
+fuseflt - A FUSE filesystem with file conversion filters
+
+
+
+Contents:
+
+    1. Introduction
+    2. Platforms
+    3. Setup
+	3.1. Compilation
+	3.2. Installation
+	3.3. Configuration
+	3.3.1. Extension filter example
+	3.3.2. File conversion filter example
+	3.4. Running
+    4. Internals
+    5. License
+    6. Authors
+
+
+1. Introduction
+
+fuseflt is a FUSE filesystem that allows the user to define file conversion
+filters that will be applied when requested. It relies on filename extensions
+to determine file types.
+
+
+
+2. Platforms
+
+Currently only the following platforms are supported:
+
+* Linux 2.6.x
+
+It may work on other platforms with a FUSE port. You need the libcfg+ library,
+which can be found at http://platon.sk/projects/libcfg+/.
+
+
+
+3. Setup
+
+3.1. Compilation
+
+First of all you need the libcfg+ library (http://platon.sk/projects/libcfg+/).
+Afterwards, a simple call to `make' is normally all you will need to compile
+fuseflt:
+
+$ make
+
+You can override the CFLAGS variable to provide optimisation flags e.t.c. The
+DEBUG variable can be used to enable debugging - if you are using gcc, setting
+DEBUG to "-g" would probably do.
+
+
+3.2. Installation
+
+First verify with `make -n install' the installation paths. By default, the 
+installation prefix is /usr/local and the fuseflt binary is installed in 
+$(prefix)/bin. You can set the prefix and bindir variables to override these
+defaults. Then run `make install' as root to perform the actual installation:
+
+# make install
+
+
+3.3. Configuration
+
+The configuration resides in a plain text file, which is parsed using the
+libcfg+ library. It contains variables in the following form:
+
+<variable> = <value>
+
+The supported variables are:
+
+cache_chk_int: an integer that indicates the number of seconds to elapse before
+	each cache entry expiry check. It can be specified only once.
+
+cache_max_age: an integer that indicates the maximum allowed age of a cache
+	entry in seconds, after which the entry is removed. It can be specified
+	only once.
+
+ext_in: along with a corresponding ext_out variable, it creates a filename
+	filter, where filenames that end in the string supplied in ext_in will
+	be changed to end in the one supplied in ext_out instead. Both variables
+	are strings and can be left empty if needed. Each ext_in should have
+	_exactly_ one corresponding ext_out entry. Multiple ext_in/ext_out sets
+	can be used to specify multiple filename filters.
+
+ext_out: see ext_in above.
+
+flt_cmd: a filter shell command. It is parsed using /bin/sh -c, so mind your
+	quotation.
+flt_in: the input file extension for this filter.
+flt_out: the output file extension for this filter.
+
+All three flt_* entries are required to set a file conversion filter. Multiple
+flt_* sets can be used to create multiple filters.
+
+
+3.3.1. Extension filter example
+
+Suppose that you already have a filter that decompresses .gz files, and you want
+to use it transparently. All you have to do is add the following to your fuseflt
+configuration:
+
+ext_in	= .gz
+ext_out	=
+
+Each *.gz file will have the .gz suffix removed and then the empty string added,
+essentially stripping the .gz extension.
+
+
+3.3.2. File conversion filter example
+
+Suppose that you want to convert all bzip2-compressed files to gzip-compressed
+ones. The following should do:
+
+flt_in	= .bz2
+flt_out	= .gz
+flt_cmd	= bzip2 -dc | gzip -9c
+
+A usage example:
+
+$ ls
+a.bz2 b.bz2
+$ zcat a.gz
+A A A A A
+$ zcat b.gz
+B B B B B
+
+You may add the following in your configuration:
+
+ext_in	= .bz2
+ext_out	= .gz
+
+to be more transparent about the whole process:
+
+$ ls
+a.gz b.gz
+
+
+3.4. Running
+
+Please read the FUSE documentation before using fuseflt.
+
+Run `fuseflt -h' to see the various command line options. You need a prepared
+configuration file beforehand and an existing mountpoint. Then all you have to
+do in most cases is:
+
+$ fuseflt file.conf source_directory/ mountpoint/
+
+
+4. Internals
+
+Some people say the most accurate documentation is the source code itself, no?
+
+
+5. License
+
+fuseflt is released under the GNU General Public License version 2. The full
+text  of the license can be found in the COPYING file that should be included in
+the fuseflt distribution.
+
+
+6. Authors
+
+Original author:
+	Theodoros V. Kalamatianos <nyb@users.sourceforge.net>

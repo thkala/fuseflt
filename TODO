@@ -1,0 +1,45 @@
+1. Items in the ToDo list:
+
+* Eliminate duplicate virtual files when performing extension transforms. We do
+  check against overriding a real file, but not against filenames produced from
+  another transform. As it is now the duplicates point to the same file anyway,
+  as it is not possible to tell whether 3.txt should come from 3.txt.gz of
+  3.txt.bz2. fuseflt simply uses the first conversion filter that matches.
+
+* Check file timestamps to discard cache entries when the input file is
+  updated or deleted.
+
+* Use inotify to invalidate cache entries prematurely when needed.
+
+* Filter chaining. Would it be possible to recursively use several filters to,
+  say, get an .mp3 file from a .wav.gz file, having only defined a .wav -> .mp3
+  filter and a .gz decompressor ? What kind of mess would we get into in order
+  to code this ?
+
+* Comments in the code.
+
+* More documentation.
+
+* Clean-up the code a bit.
+
+* Charge 0.1$ for each syscall going through fuseflt and take over the world.
+
+
+
+2. Features that will probably never be added:
+
+* Read/write support.
+  RATIONALE: While being able to directly edit compressed files e.t.c. is at
+	least somewhat appealing, coding the necessary functions and securing
+	the source filesystem against filtering command errors and people with
+	broken configuration files and/or brains is not at all attractive. And
+	let's not get into what is needed to actually achieve the expected
+	filesystem semantics when concurrent read/write accesses come into play.
+
+* Case-insensitive extension matching.
+  RATIONALE: The code to do that would be a _mess_, and the resulting filesystem
+	semantics would be a nightmare with lots of corner cases. If some people
+	want case insensitive extensions, they should do it by hand by setting
+	up multiple filters and should be ready to deal with the various nasty
+	consequences, such as trying to determine if 3.txt comes from 3.txt.gz
+	or 3.txt.GZ.
