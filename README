@@ -78,6 +78,11 @@ cache_max_age: an integer that indicates the maximum allowed age of a cache
 	entry in seconds, after which the entry is removed. It can be specified
 	only once.
 
+cache_max_nr: an integer that indicates the maximum number of cache entries.
+	Since each cache entry contains an open file descriptor, setting this
+	may be necessary to keep fuseflt from running out of file descriptors.
+	The cache tree will be pruned each time this limit is reached.
+
 temp_dir: the directory where the temporary files will be created.
 
 ext_in: along with a corresponding ext_out variable, it creates a filename

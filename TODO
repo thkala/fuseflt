@@ -1,5 +1,11 @@
 1. Items in the ToDo list:
 
+* Examine whether it would be better to remove single cache entries as needed,
+  rather than prune a number of them at once, when under high cache pressure.
+
+* Weed out the various strange conditions that might occur when unusual errors
+  happen.
+
 * Eliminate duplicate virtual files when performing extension transforms. We do
   check against overriding a real file, but not against filenames produced from
   another transform. As it is now the duplicates point to the same file anyway,

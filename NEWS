@@ -1,3 +1,9 @@
-0.0.3:
-	* A new command line syntax was added, so that fuseflt can be used from
-	  /etc/fstab.
+0.0.4:
+	* Fixed broken caching code which used to cache all file descriptors,
+	  rather than just the ones corresponding to conversion filter output.
+	  fuseflt won't reach the open fd limit so fast now.
+	* Added a cache size limit and a pruning function. fuseflt should now be
+	  far more robust when cache entries accumulate way too fast (like when
+	  users dare try absurd and completely illogical things such as running
+	  `find' or even `ls -l' on a large directory. Running `ls'... what are
+	  people thinking these days?)
