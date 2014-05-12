@@ -1,7 +1,10 @@
-0.0.7:
-	* Moved the creation of the cache expiry thread to the new flt_init
-	  function, so that it actually works when fuseflt is not used with
-	  the -f/-d options. That was a rather embarassing bug, to tell the
-	  truth. It's what you usually get for not reading all the available
-	  documentation... and it's also a proof that testing in controlled
-	  conditions cannot compare to real-life tests.
+0.0.8:
+	* Fixed a nasty bug in the extension filtering code, where some strings
+	  were being picked from the wrong array. That's what you get when you
+	  code at 3am. The good news is that it should be OK now. The bad news
+	  is that
+	  a. the example config file allowed this to slip through unnoticed
+	     (ouch, that was _bad_ luck)
+	  b. no one reported the problem. Really, aren't there any people out
+	     there using fuseflt?
+	* Whitespace clean-ups

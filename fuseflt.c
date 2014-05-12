@@ -318,7 +318,7 @@ static int fdc_open(const char *path, fdcent_t **ret)
 			++fdc_nr;
 		}
 		pthread_mutex_unlock(&fdc_mutex);
-		
+
 		if (ret != NULL) {
 			*ret = *fdcres;
 			close(rfd);
@@ -407,7 +407,7 @@ static void fdc_prune(int n)
 
 	k = fdc_nr;
 	fdc_nr = n;
-	
+
 	twalk(fdc, fdc_prune_mark);
 
 	fdc_nr = k;
@@ -495,21 +495,21 @@ static int flt_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			while ((ext_in[i] != NULL) && (ext_out[i] != NULL)) {
 				int ixl = strlen(ext_in[i]);
 				int oxl = strlen(ext_out[i]);
-				
+
 				if (((l - ixl) < 1) || ((l - ixl + oxl) > NAME_MAX) ||
 						(strncmp(de->d_name + l - ixl, ext_in[i], ixl) != 0)) {
 					++i;
 					continue;
 				}
-				
+
 				de->d_name[l - ixl] = '\0';
-				strncat(de->d_name, flt_out[i], NAME_MAX - l + ixl);
-				
+				strncat(de->d_name, ext_out[i], NAME_MAX - l + ixl);
+
 				/* Avoid duplicate filenames */
 				if (fstatat(dirfd(dp), de->d_name, &st, 0) == 0) {
 					/* Reverse the name change */
 					de->d_name[l - ixl] = '\0';
-					strncat(de->d_name, flt_in[i], NAME_MAX - l + ixl);
+					strncat(de->d_name, ext_in[i], NAME_MAX - l + ixl);
 				}
 				break;
 			}
@@ -706,16 +706,16 @@ int main(int argc, char *argv[])
 						fchdir(cwdfd);
 					}
 				}
-				
+
 				con = cfg_get_context(options);
 				if (con == NULL) {
 					free(arg);
 					perror("Configuration file processing failed");
 					return errno;
 				}
-				
+
 				cfg_set_cfgfile_context(con, 0, -1, (src != NULL)?(&(arg[1])):arg);
-				
+
 				ret = cfg_parse(con);
 				if (ret != CFG_OK) {
 					free(arg);
@@ -724,7 +724,7 @@ int main(int argc, char *argv[])
 					fprintf(stderr, "\n");
                     			return ret < 0 ? -ret : ret;
             			}
-				
+
 				cfg_free_context(con);
 
 				free(arg);
@@ -774,7 +774,7 @@ int main(int argc, char *argv[])
 	DBGMSG("temp_dir = %s", tmpdir);
 
 	o = fuse_main(pargc, pargv, &flt_oper, NULL);
-	
+
 	free(pargv);
 
 	return o;

@@ -1,3 +1,15 @@
+Mon Jun 11 02:47:54 EEST 2007 - Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
+	* Release 0.0.8
+	* Fixed a nasty bug in the extension filtering code, where some strings
+	  were being picked from the wrong array. That's what you get when you
+	  code at 3am. The good news is that it should be OK now. The bad news
+	  is that
+	  a. the example config file allowed this to slip through unnoticed
+	     (ouch, that was _bad_ luck)
+	  b. no one reported the problem. Really, aren't there any people out
+	     there using fuseflt?
+	* Whitespace clean-ups
+
 Tue May  8 01:56:28 EEST 2007 - Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
 	* Release 0.0.7
 	* Moved the creation of the cache expiry thread to the new flt_init

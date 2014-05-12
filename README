@@ -54,8 +54,8 @@ DEBUG to "-g" would probably do.
 
 3.2. Installation
 
-First verify with `make -n install' the installation paths. By default, the 
-installation prefix is /usr/local and the fuseflt binary is installed in 
+First verify with `make -n install' the installation paths. By default, the
+installation prefix is /usr/local and the fuseflt binary is installed in
 $(prefix)/bin. You can set the prefix and bindir variables to override these
 defaults. Then run `make install' as root to perform the actual installation:
 

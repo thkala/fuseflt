@@ -41,7 +41,7 @@ for my documentation directories, so it will receive a lot more testing.
 
 * How does it work ?
 
-To find out read the `Internals' section in the README. Then read the source 
+To find out read the `Internals' section in the README. Then read the source
 code itself for details.
 
 
@@ -68,7 +68,7 @@ or not...
 
 * I found a bug !
 
-Good! Now report it at <nyb@users.sourceforge.net>... or even better fix it and 
+Good! Now report it at <nyb@users.sourceforge.net>... or even better fix it and
 send a patch!
 
 
@@ -88,12 +88,12 @@ I don't like yours either.
 
 * Who wrote it ?
 
-Me, Theodoros Kalamatianos, a student at the department of Electric and Computer 
-Engineering of the National Technical University of Athens. For purposes related 
+Me, Theodoros Kalamatianos, a student at the department of Electric and Computer
+Engineering of the National Technical University of Athens. For purposes related
 to fuseflt I may be reached at <nyb@users.sourceforge.net>.
 
 
 * Under what license is it released ?
 
-Naturally, the GNU General Public License. The full text of the GPL is included 
+Naturally, the GNU General Public License. The full text of the GPL is included
 in the fuseflt tarball.
