@@ -1,3 +1,8 @@
+Sat May  5 01:30:00 EEST 2007 - Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
+	* Release 0.0.3
+	* A new command line syntax was added, so that fuseflt can be used from
+	  /etc/fstab.
+
 Fri May  4 14:18:44 EEST 2007 - Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
 	* Release 0.0.2
 	* Sending SIGUSR1 to fuseflt will now clear the cache, freeing all

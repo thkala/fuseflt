@@ -1,6 +1,3 @@
-0.0.2:
-	* Sending SIGUSR1 to fuseflt will now clear the cache, freeing all
-	  file descriptors.
-	* The temporary file directory is now settable from the configuration
-	  file.
-	* Minor documentation updates
+0.0.3:
+	* A new command line syntax was added, so that fuseflt can be used from
+	  /etc/fstab.

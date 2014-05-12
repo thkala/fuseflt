@@ -150,6 +150,15 @@ do in most cases is:
 
 $ fuseflt file.conf source_directory/ mountpoint/
 
+If you want to use fuseflt from /etc/fstab, a different syntax can be used. The
+following example shows its use:
+
+fuseflt##/etc/fuseflt.doc.conf##/usr/share/doc /fs/vfs/doc fuse defaults 0 0
+
+To allow this, fuseflt supports an alternative command line syntax:
+
+$ fuseflt '#file.conf##source_directory/' mountpoint/
+
 Should you need to discard the file cache (e.g. when the source filesystem has
 been altered, or if you want to free the open file descriptors), you can send
 the USR1 signal to fuseflt to do so.

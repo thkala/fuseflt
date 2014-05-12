@@ -486,11 +486,11 @@ int main(int argc, char *argv[])
 
 	for (i = 1; i < (argc); ++i)
 		if (strcmp("-h", argv[i]) == 0) {
-			argc = 1;
+			pargc = 1;
 			break;
 		}
 
-	if (argc < 4) {
+	if (pargc < 4) {
 		printf("\nfuseflt %s - A FUSE filesystem with file conversion filter support\n"
 		       "Copyright (c) 2007 Theodoros V. Kalamatianos <nyb@users.sourceforge.net>\n\n",
 		       VERSION);
@@ -511,7 +511,9 @@ int main(int argc, char *argv[])
 			if ((f == 0) && (argv[i][0] != '-')) {
 				CFG_CONTEXT con;
 				int ret;
-				
+
+				char *arg = strdup(argv[i]);
+
 				struct cfg_option options[] = {
 					{NULL, '\0', "cache_chk_int", CFG_INT, (void *) &fdc_chk_int, 0},
 					{NULL, '\0', "cache_max_age", CFG_INT, (void *) &fdc_max_age, 0},
@@ -525,27 +527,52 @@ int main(int argc, char *argv[])
 
 					CFG_END_OF_LIST
 				};
+
+				/*
+				 * Allow the configuration file and source directory to be supplied in a
+				 * single stroke, so that fuseflt can be mounted from /etc/fstab.
+				 */
+				if (arg[0] == '#') {
+					src = strstr(&(arg[1]), "##");
+
+					if (src != NULL) {
+						*src = '\0';
+						src += 2;
+
+						o = chdir(src);
+						if (o == -1) {
+							free(arg);
+							perror("Cannot enter source directory");
+							return errno;
+						}
+						src = get_current_dir_name();
+						fchdir(cwdfd);
+					}
+				}
 				
 				con = cfg_get_context(options);
 				if (con == NULL) {
+					free(arg);
 					perror("Configuration file processing failed");
 					return errno;
 				}
 				
-				cfg_set_cfgfile_context(con, 0, -1, argv[i]);
+				cfg_set_cfgfile_context(con, 0, -1, (src != NULL)?(&(arg[1])):arg);
 				
 				ret = cfg_parse(con);
 				if (ret != CFG_OK) {
+					free(arg);
 					fprintf(stderr, "Configuration file processing failed: ");
 					cfg_fprint_error(con, stderr);
 					fprintf(stderr, "\n");
                     			return ret < 0 ? -ret : ret;
             			}
 
+				free(arg);
 				pargc--;
 				++f;
 				continue;
-			} else if ((f == 1) && (argv[i][0] != '-')) {
+			} else if ((f == 1) && (src == NULL) && (argv[i][0] != '-')) {
 				o = chdir(argv[i]);
 				if (o == -1) {
 					perror("Cannot enter source directory");
