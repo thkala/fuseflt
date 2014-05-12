@@ -568,6 +568,14 @@ static int flt_release(const char *path, struct fuse_file_info *fi)
 }
 
 
+static void *flt_init(struct fuse_conn_info *conn)
+{
+	/* The file descriptor cache expiry thread */
+	pthread_create(&fdc_expire_thread, NULL, fdc_expire, NULL);
+
+	return NULL;
+}
+
 static void flt_arrstr_free(char **c)
 {
 	int i;
@@ -609,6 +617,7 @@ static struct fuse_operations flt_oper = {
 	.statfs		= flt_statfs,
 	.flush		= flt_flush,
 	.release	= flt_release,
+	.init		= flt_init,
 	.destroy	= flt_destroy,
 };
 
@@ -761,9 +770,6 @@ int main(int argc, char *argv[])
 
 	/* Allow SIGUSR1 to clear the cache */
 	signal(SIGUSR1, fdc_clear);
-
-	/* The file descriptor cache expiry thread */
-	pthread_create(&fdc_expire_thread, NULL, fdc_expire, NULL);
 
 	DBGMSG("temp_dir = %s", tmpdir);
 

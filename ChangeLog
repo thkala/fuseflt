@@ -1,3 +1,12 @@
+Tue May  8 01:56:28 EEST 2007 - Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
+	* Release 0.0.7
+	* Moved the creation of the cache expiry thread to the new flt_init
+	  function, so that it actually works when fuseflt is not used with
+	  the -f/-d options. That was a rather embarassing bug, to tell the
+	  truth. It's what you usually get for not reading all the available
+	  documentation... and it's also a proof that testing in controlled
+	  conditions cannot compare to real-life tests.
+
 Sun May  6 00:35:17 EEST 2007 - Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
 	* Release 0.0.6
 	* Fixed the getattr method to report correct information for converted
