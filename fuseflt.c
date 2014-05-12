@@ -73,36 +73,35 @@ static char **flt_in, **flt_out, **flt_cmd, **ext_in, **ext_out;
 
 static int flt_path(char *path)
 {
-	int i = 0;
-	int l = strlen(path);
-	int r;
 	struct stat st;
 
-	if (stat(path, &st) == 0)
+	if (lstat(path, &st) == 0)
 		return -1;
 
+	int l = strlen(path);
+
+	int i = 0;
 	while ((flt_in[i] != NULL) && (flt_out[i] != NULL) && (flt_cmd[i] != NULL)) {
+		if (flt_cmd[i][0] == 0)
+			continue;
+
 		char t[PATH_MAX + 1];
-		int ixl = strlen(flt_in[i]);
-		int oxl = strlen(flt_out[i]);
+		int ixl = strlen(flt_in[i]), oxl = strlen(flt_out[i]);
 
-		if (((l - oxl) < 1) || (path[l - oxl - 1] == '/') ||
-				((l - oxl + ixl) > PATH_MAX)) {
+		if (((l - oxl) < 1) ||
+				(path[l - oxl - 1] == '/') ||
+				((l - oxl + ixl) > PATH_MAX) ||
+				(strncmp(path + l - oxl, flt_out[i], oxl) != 0)) {
 			++i;
 			continue;
 		}
 
-		if (strncmp(path + l - oxl, flt_out[i], oxl) != 0) {
-			++i;
-			continue;
-		}
 		strncpy(t, path, PATH_MAX);
 		t[l - oxl] = '\0';
 		strncat(t, flt_in[i], PATH_MAX - l + oxl);
 
-		r = stat(t, &st);
-		if ((r == 0) && ((S_ISREG(st.st_mode)) ||
-				((ixl == 0) && (oxl == 0)))) {
+		int r = stat(t, &st);
+		if ((r == 0) && ((S_ISREG(st.st_mode)) || ((ixl == 0) && (oxl == 0)))) {
 			strncpy(path, t, PATH_MAX);
 			return i;
 		}
@@ -155,7 +154,9 @@ static int fdcentcmp(const void *n1, const void *n2)
 static void fdc_clear(int e);
 static void fdc_prune(int n);
 
-static int fdc_open(const char *path, fdcent_t **ret)
+#define RET(r)	{ free(vpath); return(r); }
+#define ERR(x)	{ res = -errno; x; RET(res) }
+static int fdc_open(const char *path, struct stat *stbuf)
 {
 	int res, rfd;
         char *vpath = strdup(path);
@@ -173,62 +174,66 @@ static int fdc_open(const char *path, fdcent_t **ret)
 
 		gettimeofday(&((*fdcres)->et), NULL);
 
-		if (ret != NULL) {
-			*ret = *fdcres;
+		if (stbuf != NULL) {
 			rfd = 0;
+			*stbuf = (*fdcres)->st;
 		} else if (fdc_ghost_tmp) {
 			rfd = dup((*fdcres)->fd);
+			if (rfd == -1) {
+				rfd = -errno;
+				DBGMSG("fdc: cache FD duplication failure [%s]",
+					vpath);
+			}
 		} else {
 			rfd = open((*fdcres)->tfn, O_RDONLY);
 			if (rfd == -1) {
-				int e = errno;
+				rfd = -errno;
 				DBGMSG("fdc: cache file open failure [%s:%s]",
 					vpath, (*fdcres)->tfn);
-				return -e;
 			}
 		}
 
 		pthread_mutex_unlock(&fdc_mutex);
-
-		free(vpath);
-		return rfd;
+		RET(rfd)
 	}
 	pthread_mutex_unlock(&fdc_mutex);
 
-	if (ret != NULL)
-		*ret = NULL;
+	if (f < 0) {
+		if (stbuf == NULL) {
+			rfd = open(path, O_RDONLY);
+			if (rfd == -1)
+				RET(-errno)
+		} else {
+			rfd = lstat(path, stbuf);
+			if (rfd == -1)
+				RET(-errno)
+		}
+	} else {
+		int ifd = open(path, O_RDONLY);
+		if (ifd == -1)
+			RET(-errno)
 
-	res = open(path, O_RDONLY);
-	if (res == -1) {
-		free(vpath);
-		return -errno;
-	}
-
-	if ((f < 0) || (strlen(flt_cmd[f]) == 0))
-		rfd = res;
-	else {
-		int ifd = res;
 		struct stat st;
 
 		char tfn[PATH_MAX + 1];
 		snprintf(tfn, PATH_MAX + 1, "%s/.fuseflt.XXXXXX", tmpdir);
 
 		int ofd = mkstemp(tfn);
-		if (ofd == -1) {
-			DBGMSG("flt: unable to create temporary file (err=%i)", errno)
-			close(ifd);
-			free(vpath);
-			return -errno;
-		}
+		if (ofd == -1)
+			ERR(
+				DBGMSG("flt: unable to create temporary file (err=%i)", errno)
+				close(ifd)
+			)
 
 		if (fdc_ghost_tmp)
 			unlink(tfn);
 
 		pid_t pid = fork();
 		if (pid == -1) {
-			close(ifd);
-			free(vpath);
-			return -errno;
+			ERR(
+				DBGMSG("flt: fork() failed (err=%i)", errno)
+				close(ifd)
+			)
 		} else if (pid != 0) {
 			int ws;
 			struct stat tst;
@@ -244,12 +249,8 @@ static int fdc_open(const char *path, fdcent_t **ret)
 			st.st_mode &= ~(S_IWUSR|S_IWGRP|S_IWOTH);
 
 			close(ifd);
-			if (res == -1) {
-				int e = errno;
-				close(ofd);
-				free(vpath);
-				return -e;
-			}
+			if (res == -1)
+				ERR(close(ofd))
 		} else {
 			dup2(ifd, fileno(stdin));
 			dup2(ofd, fileno(stdout));
@@ -265,12 +266,8 @@ static int fdc_open(const char *path, fdcent_t **ret)
 
 		/* Prepare the file descriptor cache entry */
 		fdcent = malloc(sizeof(*fdcent));
-		if (fdcent == NULL) {
-			int e = errno;
-			close(rfd);
-			free(vpath);
-			return -e;
-		}
+		if (fdcent == NULL)
+			ERR(close(rfd))
 		strncpy(fdcent->path, vpath, PATH_MAX);
 		gettimeofday(&(fdcent->et), NULL);
 		fdcent->st = st;
@@ -290,19 +287,18 @@ static int fdc_open(const char *path, fdcent_t **ret)
 			fdc_prune(fdc_nr_max / 4);
 		fdcres = tsearch(fdcent, &fdc, fdcentcmp);
 		if (fdcres == NULL) {
-			int e = errno;
-			if (fdc_ghost_tmp) {
-				close(fdcent->fd);
-			} else {
-				unlink(fdcent->tfn);
-				free(fdcent->tfn);
-			}
-			free(fdcent);
-			close(rfd);
-			free(vpath);
+			ERR(
+				if (fdc_ghost_tmp) {
+					close(fdcent->fd);
+				} else {
+					unlink(fdcent->tfn);
+					free(fdcent->tfn);
+				}
+				free(fdcent);
+				close(rfd);
 
-			pthread_mutex_unlock(&fdc_mutex);
-			return -e;
+				pthread_mutex_unlock(&fdc_mutex);
+			)
 		} else if (*fdcres != fdcent) {
 			(*fdcres)->et = fdcent->et;
 			if (fdc_ghost_tmp) {
@@ -319,15 +315,14 @@ static int fdc_open(const char *path, fdcent_t **ret)
 		}
 		pthread_mutex_unlock(&fdc_mutex);
 
-		if (ret != NULL) {
-			*ret = *fdcres;
+		if (stbuf != NULL) {
 			close(rfd);
 			rfd = 0;
+			*stbuf = (*fdcres)->st;
 		}
 	}
 
-	free(vpath);
-	return rfd;
+	RET(rfd)
 }
 
 static void fdc_walk_delete_removed(const void *p, const VISIT v, const int d)
@@ -421,26 +416,7 @@ static void fdc_prune(int n)
 
 static int flt_getattr(const char *path, struct stat *stbuf)
 {
-	fdcent_t *ent = NULL;
-
-	int fd = fdc_open(path, &ent);
-	if (fd < 0)
-		return fd;
-
-	if (ent != NULL) {
-		*stbuf = ent->st;
-		return 0;
-	}
-
-	int res = fstat(fd, stbuf);
-	if (res < 0) {
-		int e = errno;
-		close(fd);
-		return -e;
-	}
-
-	close(fd);
-	return 0;
+	return fdc_open(path, stbuf);
 }
 
 static int flt_fgetattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi)
@@ -506,7 +482,7 @@ static int flt_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 				strncat(de->d_name, ext_out[i], NAME_MAX - l + ixl);
 
 				/* Avoid duplicate filenames */
-				if (fstatat(dirfd(dp), de->d_name, &st, 0) == 0) {
+				if (fstatat(dirfd(dp), de->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
 					/* Reverse the name change */
 					de->d_name[l - ixl] = '\0';
 					strncat(de->d_name, ext_in[i], NAME_MAX - l + ixl);

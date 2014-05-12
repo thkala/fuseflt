@@ -33,7 +33,7 @@
 
 * More documentation.
 
-* Clean-up the code a bit.
+* Clean-up the code a bit (e.g. main() is a royal mess).
 
 * Charge 0.1$ for each syscall going through fuseflt and take over the world.
 

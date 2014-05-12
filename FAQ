@@ -66,6 +66,18 @@ too much on it. Actually, that might be a good idea whether you use large caches
 or not...
 
 
+* Are there any security issues ?
+
+There should be no security issues when fuseflt is used with the default FUSE
+options, as it can only be accessed by the user who owns the fuseflt process.
+When used with the allow_other option, however, it should ALWAYS be used with
+default_permissions as well. _Theoretically_ this should engage the in-kernel
+file access control code, preventing users from reading files they should not be
+able to, as long as fuseflt provides correct stat() information. Unfortunately
+the security implications of using fuseflt in this mode have not been researched
+in depth yet.
+
+
 * I found a bug !
 
 Good! Now report it at <nyb@users.sourceforge.net>... or even better fix it and

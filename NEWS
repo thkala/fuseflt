@@ -1,10 +1,13 @@
-0.0.8:
-	* Fixed a nasty bug in the extension filtering code, where some strings
-	  were being picked from the wrong array. That's what you get when you
-	  code at 3am. The good news is that it should be OK now. The bad news
-	  is that
-	  a. the example config file allowed this to slip through unnoticed
-	     (ouch, that was _bad_ luck)
-	  b. no one reported the problem. Really, aren't there any people out
-	     there using fuseflt?
-	* Whitespace clean-ups
+0.0.9:
+	* Document the proper mount options when used from /etc/fstab
+	* Fixed the path resolution code so that existent files are never
+	  overriden, even if they cannot be stat()'ed.
+	* Skip filter entries with empty command strings
+	* Fix the getattr() method so that it reports symlinks correctly. This
+	  fixes a serious issue where `find' was unable to detect symlink loops.
+	* Optimise getattr() so that it does not call open() any more.
+	  This should also allow unreadable files to be stat()'ed.
+	* Fix several error code paths in fdc_open()
+	* Various other bug-fixes
+	* Code clean-ups
+	* Minor documentation updates
