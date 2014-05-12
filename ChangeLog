@@ -1,3 +1,13 @@
+Sat May  5 21:00:26 EEST 2007 - Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
+	* Release 0.0.5
+	* Added the ability to use visible temporary files, as a way to avoid
+	  the file descriptor usage limits. As a side-effect, if fuseflt is shot
+	  in the head (kill -9, SIGSEGV and similar) the temporary files will
+	  have to be removed manually. This mode has to be explicitly enabled in
+	  the configuration file.
+	* Ran fuseflt under valgrind and eliminated most memory leaks.
+	* Minor documentation updates
+
 Sat May  5 15:37:56 EEST 2007 - Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
 	* Release 0.0.4
 	* Fixed broken caching code which used to cache all file descriptors,

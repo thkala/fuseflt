@@ -1,9 +1,8 @@
-0.0.4:
-	* Fixed broken caching code which used to cache all file descriptors,
-	  rather than just the ones corresponding to conversion filter output.
-	  fuseflt won't reach the open fd limit so fast now.
-	* Added a cache size limit and a pruning function. fuseflt should now be
-	  far more robust when cache entries accumulate way too fast (like when
-	  users dare try absurd and completely illogical things such as running
-	  `find' or even `ls -l' on a large directory. Running `ls'... what are
-	  people thinking these days?)
+0.0.5:
+	* Added the ability to use visible temporary files, as a way to avoid
+	  the file descriptor usage limits. As a side-effect, if fuseflt is shot
+	  in the head (kill -9, SIGSEGV and similar) the temporary files will
+	  have to be removed manually. This mode has to be explicitly enabled in
+	  the configuration file.
+	* Ran fuseflt under valgrind and eliminated most memory leaks.
+	* Minor documentation updates

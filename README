@@ -85,6 +85,14 @@ cache_max_nr: an integer that indicates the maximum number of cache entries.
 
 temp_dir: the directory where the temporary files will be created.
 
+ghost_temp: By default fuseflt uses "ghost" temporary files, files that have
+	been created and then unlinked. While this method has the advantage of
+	not leaving files around, it does require an open file descriptor for
+	each temporary file. By setting ghost_temp to 0, the total usage of file
+	descriptors is much saner, but the temporary files become visible and if
+	fuseflt is killed abruptly (kill -9, segmentation faults, the end of the
+	universe as we know it e.t.c.) they will have to be removed manually.
+
 ext_in: along with a corresponding ext_out variable, it creates a filename
 	filter, where filenames that end in the string supplied in ext_in will
 	be changed to end in the one supplied in ext_out instead. Both variables

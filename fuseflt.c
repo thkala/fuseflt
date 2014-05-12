@@ -15,7 +15,7 @@
 
 
 
-#define DEBUG		1
+#define DEBUG		0
 
 #define FDC_MAX_AGE	120
 #define FDC_CHK_INT	5
@@ -120,8 +120,11 @@ static void *fdc = NULL;
 static int fdc_nr = 0;
 static int fdc_nr_max = 0;
 
+static int fdc_ghost_tmp = 1;
+
 static pthread_t fdc_expire_thread;
 static pthread_mutex_t fdc_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int fdc_expire_thread_stop = 0;
 
 static int fdc_max_age = FDC_MAX_AGE;
 static int fdc_chk_int = FDC_CHK_INT;
@@ -167,8 +170,18 @@ static int fdc_open(const char *path)
 	if (fdcres != NULL) {
 		DBGMSG("fdc: retrieve %s", vpath);
 
-		rfd = dup((*fdcres)->fd);
 		gettimeofday(&((*fdcres)->et), NULL);
+		if (fdc_ghost_tmp) {
+			rfd = dup((*fdcres)->fd);
+		} else {
+			rfd = open((*fdcres)->tfn, O_RDONLY);
+			if (rfd == -1) {
+				int e = errno;
+				DBGMSG("fdc: cache file open failure [%s:%s]",
+					vpath, (*fdcres)->tfn);
+				return -e;
+			}
+		}
 
 		pthread_mutex_unlock(&fdc_mutex);
 
@@ -189,7 +202,7 @@ static int fdc_open(const char *path)
 		int ifd = res;
 
 		char tfn[PATH_MAX + 1];
-		snprintf(tfn, PATH_MAX + 1, "%s/fuseflt.XXXXXX", tmpdir);
+		snprintf(tfn, PATH_MAX + 1, "%s/.fuseflt.XXXXXX", tmpdir);
 
 		int ofd = mkstemp(tfn);
 		if (ofd == -1) {
@@ -199,7 +212,8 @@ static int fdc_open(const char *path)
 			return -errno;
 		}
 
-		unlink(tfn);
+		if (fdc_ghost_tmp)
+			unlink(tfn);
 
 		pid_t pid = fork();
 		if (pid == -1) {
@@ -240,7 +254,13 @@ static int fdc_open(const char *path)
 		}
 		strncpy(fdcent->path, vpath, PATH_MAX);
 		gettimeofday(&(fdcent->et), NULL);
-		fdcent->fd = dup(rfd);
+		if (fdc_ghost_tmp) {
+			fdcent->fd = dup(rfd);
+			fdcent->tfn = NULL;
+		} else {
+			fdcent->fd = -1;
+			fdcent->tfn = strdup(tfn);
+		}
 		fcntl(fdcent->fd, FD_CLOEXEC, 1);
 
 		/* Cache the file descriptor for future use */
@@ -251,6 +271,12 @@ static int fdc_open(const char *path)
 		fdcres = tsearch(fdcent, &fdc, fdcentcmp);
 		if (fdcres == NULL) {
 			int e = errno;
+			if (fdc_ghost_tmp) {
+				close(fdcent->fd);
+			} else {
+				unlink(fdcent->tfn);
+				free(fdcent->tfn);
+			}
 			free(fdcent);
 			close(rfd);
 			free(vpath);
@@ -259,8 +285,14 @@ static int fdc_open(const char *path)
 			return -e;
 		} else if (*fdcres != fdcent) {
 			(*fdcres)->et = fdcent->et;
-			close((*fdcres)->fd);
-			(*fdcres)->fd = fdcent->fd;
+			if (fdc_ghost_tmp) {
+				close((*fdcres)->fd);
+				(*fdcres)->fd = fdcent->fd;
+			} else {
+				unlink((*fdcres)->tfn);
+				free((*fdcres)->tfn);
+				(*fdcres)->tfn = fdcent->tfn;
+			}
 			free(fdcent);
 		} else {
 			++fdc_nr;
@@ -280,7 +312,12 @@ static void fdc_walk_delete_removed(const void *p, const VISIT v, const int d)
 
 static void fdc_free(void *p) {
 	DBGMSG("fdc: remove %s", ((fdcent_t *)p)->path);
-	close(((fdcent_t *)p)->fd);
+	if (fdc_ghost_tmp) {
+		close(((fdcent_t *)p)->fd);
+	} else {
+		unlink(((fdcent_t *)p)->tfn);
+		free(((fdcent_t *)p)->tfn);
+	}
 	--fdc_nr;
 	free(p);
 }
@@ -296,7 +333,7 @@ static void fdc_expire_mark(const void *p, const VISIT v, const int d)
 
 static void *fdc_expire(void *arg)
 {
-	while (1) {
+	while (!fdc_expire_thread_stop) {
 		sleep(fdc_chk_int);
 
 		DBGMSG("fdc: expiration check [i=%i,m=%i,n=%i/%i]",
@@ -498,6 +535,33 @@ static int flt_release(const char *path, struct fuse_file_info *fi)
 }
 
 
+static void flt_arrstr_free(char **c)
+{
+	int i;
+
+	for (i = 0; c[i] != NULL; i++)
+		free(c[i]);
+
+	free(c);
+}
+
+static void flt_destroy(void *p)
+{
+	fdc_clear(0);
+
+	fdc_expire_thread_stop = 1;
+	pthread_kill(fdc_expire_thread, SIGINT);
+	pthread_join(fdc_expire_thread, NULL);
+
+	flt_arrstr_free(flt_in);
+	flt_arrstr_free(flt_out);
+	flt_arrstr_free(flt_cmd);
+	flt_arrstr_free(ext_in);
+	flt_arrstr_free(ext_out);
+	free(src);
+}
+
+
 
 static struct fuse_operations flt_oper = {
 	.getattr	= flt_getattr,
@@ -512,6 +576,7 @@ static struct fuse_operations flt_oper = {
 	.statfs		= flt_statfs,
 	.flush		= flt_flush,
 	.release	= flt_release,
+	.destroy	= flt_destroy,
 };
 
 
@@ -567,6 +632,7 @@ int main(int argc, char *argv[])
 					{NULL, '\0', "cache_max_age", CFG_INT, (void *) &fdc_max_age, 0},
 					{NULL, '\0', "cache_max_nr", CFG_INT, (void *) &fdc_nr_max, 0},
 					{NULL, '\0', "temp_dir", CFG_STR, (void *) &tmpdir, 0},
+					{NULL, '\0', "ghost_temp", CFG_INT, (void *) &fdc_ghost_tmp, 0},
 
 					{NULL, '\0', "flt_in", CFG_STR+CFG_MULTI, (void *) &flt_in, 0},
 					{NULL, '\0', "flt_out", CFG_STR+CFG_MULTI, (void *) &flt_out, 0},
@@ -616,6 +682,8 @@ int main(int argc, char *argv[])
 					fprintf(stderr, "\n");
                     			return ret < 0 ? -ret : ret;
             			}
+				
+				cfg_free_context(con);
 
 				free(arg);
 				pargc--;
@@ -642,12 +710,21 @@ int main(int argc, char *argv[])
 	close(cwdfd);
 	umask(077);
 
+	/* Use `ghost' temporary files or not ? */
+	if (fdc_ghost_tmp != 0)
+		fdc_ghost_tmp = 1;
+
 	/* Get a proper value for fdc_nr_max */
-	o = sysconf(_SC_OPEN_MAX) - 64;
-	if (fdc_nr_max == 0)
-		fdc_nr_max = o / 2;
-	else if (fdc_nr_max > o)
-		fdc_nr_max = o;
+	if (fdc_ghost_tmp) {
+		o = sysconf(_SC_OPEN_MAX) - 64;
+		if (fdc_nr_max == 0)
+			fdc_nr_max = o / 2;
+		else if (fdc_nr_max > o)
+			fdc_nr_max = o;
+	} else {
+		if (fdc_nr_max == 0)
+			fdc_nr_max = 2048;
+	}
 
 	/* Allow SIGUSR1 to clear the cache */
 	signal(SIGUSR1, fdc_clear);
@@ -657,5 +734,9 @@ int main(int argc, char *argv[])
 
 	DBGMSG("temp_dir = %s", tmpdir);
 
-	return fuse_main(pargc, pargv, &flt_oper, NULL);
+	o = fuse_main(pargc, pargv, &flt_oper, NULL);
+	
+	free(pargv);
+
+	return o;
 }

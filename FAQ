@@ -45,6 +45,27 @@ To find out read the `Internals' section in the README. Then read the source
 code itself for details.
 
 
+* Should I use large caches ?
+
+That's up to you. Large caches can help performance in some cases, but they are
+very taxing in resources. When using invisible temporary files, fuseflt won't
+let you exceed the per-process open file descriptor limit with _just_ the cache
+(yes, you can still reach that limit by opening multiple files simultaneously),
+but it won't protect you from reaching any other limits.
+
+In addition, there are no protections when using visible temporary files. When
+using large (e.g. in the 10,000 range) caches within that context, you might
+even bump on limits posed by the kernel or the temporary directory filesystem.
+For example ext3fs with the dir_index option enabled starts to present filename
+hash collisions when there are over 15,000 files in one directory. At least, the
+original "ghost" temporary file code does not suffer from that problem, as the
+files are deleted immediately after being created.
+
+So when using large caches, beware and stress-check your setup before relying
+too much on it. Actually, that might be a good idea whether you use large caches
+or not...
+
+
 * I found a bug !
 
 Good! Now report it at <nyb@users.sourceforge.net>... or even better fix it and 
