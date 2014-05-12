@@ -1,4 +1,4 @@
-fuseflt - A FUSE filesystem with file conversion filters
+fuseflt - A FUSE filesystem with file conversion filter support
 
 
 
@@ -41,9 +41,9 @@ which can be found at http://platon.sk/projects/libcfg+/.
 
 3.1. Compilation
 
-First of all you need the libcfg+ library (http://platon.sk/projects/libcfg+/).
-Afterwards, a simple call to `make' is normally all you will need to compile
-fuseflt:
+First of all you need the FUSE library and headers (http://fuse.sourceforge.net)
+as well as the libcfg+ library (http://platon.sk/projects/libcfg+/). Afterwards,
+a simple call to `make' is normally all you will need to compile fuseflt:
 
 $ make
 
@@ -77,6 +77,8 @@ cache_chk_int: an integer that indicates the number of seconds to elapse before
 cache_max_age: an integer that indicates the maximum allowed age of a cache
 	entry in seconds, after which the entry is removed. It can be specified
 	only once.
+
+temp_dir: the directory where the temporary files will be created.
 
 ext_in: along with a corresponding ext_out variable, it creates a filename
 	filter, where filenames that end in the string supplied in ext_in will
@@ -148,10 +150,16 @@ do in most cases is:
 
 $ fuseflt file.conf source_directory/ mountpoint/
 
+Should you need to discard the file cache (e.g. when the source filesystem has
+been altered, or if you want to free the open file descriptors), you can send
+the USR1 signal to fuseflt to do so.
+
+
 
 4. Internals
 
 Some people say the most accurate documentation is the source code itself, no?
+
 
 
 5. License
@@ -159,6 +167,7 @@ Some people say the most accurate documentation is the source code itself, no?
 fuseflt is released under the GNU General Public License version 2. The full
 text  of the license can be found in the COPYING file that should be included in
 the fuseflt distribution.
+
 
 
 6. Authors

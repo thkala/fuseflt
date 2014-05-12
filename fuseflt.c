@@ -1,5 +1,5 @@
 /*
- * fuseflt - A FUSE filesystem with file conversion filters
+ * fuseflt - A FUSE filesystem with file conversion filter support
  *
  * Copyright (c) 2007 Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
  *
@@ -15,7 +15,7 @@
 
 
 
-#define DEBUG		1
+#define DEBUG		0
 
 #define FDC_MAX_AGE	120
 #define FDC_CHK_INT	5
@@ -33,6 +33,7 @@
 #include <fuse.h>
 #include <pthread.h>
 #include <search.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -127,6 +128,9 @@ typedef struct __fdcent_t {
 	int fd;
 } fdcent_t;
 
+/* The temporary file directory */
+static char *tmpdir = "/tmp";
+
 /* Expiration threshold */
 static struct timeval tt;
 
@@ -171,7 +175,9 @@ static int fdc_open(const char *path)
 	else {
 		int ifd = res;
 
-		char tfn[] = "/tmp/fuseflt.XXXXXX";
+		char tfn[PATH_MAX + 1];
+		snprintf(tfn, PATH_MAX + 1, "%s/fuseflt.XXXXXX", tmpdir);
+
 		int ofd = mkstemp(tfn);
 		unlink(tfn);
 
@@ -288,6 +294,16 @@ static void *fdc_expire(void *arg)
 	}
 
 	return NULL;
+}
+
+static void fdc_clear(int e)
+{
+	DBGMSG("fdc: clearing cache");
+
+	pthread_mutex_lock(&fdc_mutex);
+	tdestroy(fdc, fdc_free);
+	fdc = NULL;
+	pthread_mutex_unlock(&fdc_mutex);
 }
 
 
@@ -475,7 +491,7 @@ int main(int argc, char *argv[])
 		}
 
 	if (argc < 4) {
-		printf("\nfuseflt %s - A FUSE filesystem with file conversion filters\n"
+		printf("\nfuseflt %s - A FUSE filesystem with file conversion filter support\n"
 		       "Copyright (c) 2007 Theodoros V. Kalamatianos <nyb@users.sourceforge.net>\n\n",
 		       VERSION);
 
@@ -499,6 +515,7 @@ int main(int argc, char *argv[])
 				struct cfg_option options[] = {
 					{NULL, '\0', "cache_chk_int", CFG_INT, (void *) &fdc_chk_int, 0},
 					{NULL, '\0', "cache_max_age", CFG_INT, (void *) &fdc_max_age, 0},
+					{NULL, '\0', "temp_dir", CFG_STR, (void *) &tmpdir, 0},
 
 					{NULL, '\0', "flt_in", CFG_STR+CFG_MULTI, (void *) &flt_in, 0},
 					{NULL, '\0', "flt_out", CFG_STR+CFG_MULTI, (void *) &flt_out, 0},
@@ -549,8 +566,13 @@ int main(int argc, char *argv[])
 	close(cwdfd);
 	umask(077);
 
+	/* Allow SIGUSR1 to clear the cache */
+	signal(SIGUSR1, fdc_clear);
+
 	/* The file descriptor cache expiry thread */
 	pthread_create(&fdc_expire_thread, NULL, fdc_expire, NULL);
+
+	DBGMSG("temp_dir = %s", tmpdir);
 
 	return fuse_main(pargc, pargv, &flt_oper, NULL);
 }

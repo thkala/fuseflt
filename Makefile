@@ -1,5 +1,5 @@
 #
-# fuseflt - A FUSE filesystem with file conversion filters
+# fuseflt - A FUSE filesystem with file conversion filter support
 #
 # Copyright (c) 2007 Theodoros V. Kalamatianos <nyb@users.sourceforge.net>
 #
@@ -23,7 +23,7 @@ VER := $(shell head -n 1 NEWS | cut -d : -f 1)
 
 all: fuseflt
 
-%: %.c
+fuseflt: fuseflt.c NEWS
 	$(CC) $(shell pkg-config fuse --cflags --libs) $(CFLAGS) -lcfg+ -DVERSION=\"$(VER)\" $< -o $@
 
 install: all

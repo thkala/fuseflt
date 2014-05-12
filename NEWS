@@ -1,2 +1,6 @@
-0.0.1:
-	* Initial testing release
+0.0.2:
+	* Sending SIGUSR1 to fuseflt will now clear the cache, freeing all
+	  file descriptors.
+	* The temporary file directory is now settable from the configuration
+	  file.
+	* Minor documentation updates
