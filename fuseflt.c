@@ -131,9 +131,10 @@ static int fdc_chk_int = FDC_CHK_INT;
 
 typedef struct __fdcent_t {
 	char path[PATH_MAX];
-	char *tfn;
 	struct timeval et;
+	struct stat st;
 	int fd;
+	char *tfn;
 } fdcent_t;
 
 /* The temporary file directory */
@@ -154,7 +155,7 @@ static int fdcentcmp(const void *n1, const void *n2)
 static void fdc_clear(int e);
 static void fdc_prune(int n);
 
-static int fdc_open(const char *path)
+static int fdc_open(const char *path, fdcent_t **ret)
 {
 	int res, rfd;
         char *vpath = strdup(path);
@@ -171,7 +172,11 @@ static int fdc_open(const char *path)
 		DBGMSG("fdc: retrieve %s", vpath);
 
 		gettimeofday(&((*fdcres)->et), NULL);
-		if (fdc_ghost_tmp) {
+
+		if (ret != NULL) {
+			*ret = *fdcres;
+			rfd = 0;
+		} else if (fdc_ghost_tmp) {
 			rfd = dup((*fdcres)->fd);
 		} else {
 			rfd = open((*fdcres)->tfn, O_RDONLY);
@@ -190,6 +195,9 @@ static int fdc_open(const char *path)
 	}
 	pthread_mutex_unlock(&fdc_mutex);
 
+	if (ret != NULL)
+		*ret = NULL;
+
 	res = open(path, O_RDONLY);
 	if (res == -1) {
 		free(vpath);
@@ -200,6 +208,7 @@ static int fdc_open(const char *path)
 		rfd = res;
 	else {
 		int ifd = res;
+		struct stat st;
 
 		char tfn[PATH_MAX + 1];
 		snprintf(tfn, PATH_MAX + 1, "%s/.fuseflt.XXXXXX", tmpdir);
@@ -222,8 +231,18 @@ static int fdc_open(const char *path)
 			return -errno;
 		} else if (pid != 0) {
 			int ws;
+			struct stat tst;
 
 			res = waitpid(pid, &ws, 0);
+
+			/* Get the stat(2) information */
+			fstat(ifd, &st);
+			fstat(ofd, &tst);
+			st.st_size = tst.st_size;
+			st.st_blksize = tst.st_blksize;
+			st.st_blocks = tst.st_blocks;
+			st.st_mode &= ~(S_IWUSR|S_IWGRP|S_IWOTH);
+
 			close(ifd);
 			if (res == -1) {
 				int e = errno;
@@ -254,6 +273,7 @@ static int fdc_open(const char *path)
 		}
 		strncpy(fdcent->path, vpath, PATH_MAX);
 		gettimeofday(&(fdcent->et), NULL);
+		fdcent->st = st;
 		if (fdc_ghost_tmp) {
 			fdcent->fd = dup(rfd);
 			fdcent->tfn = NULL;
@@ -298,6 +318,12 @@ static int fdc_open(const char *path)
 			++fdc_nr;
 		}
 		pthread_mutex_unlock(&fdc_mutex);
+		
+		if (ret != NULL) {
+			*ret = *fdcres;
+			close(rfd);
+			rfd = 0;
+		}
 	}
 
 	free(vpath);
@@ -395,9 +421,16 @@ static void fdc_prune(int n)
 
 static int flt_getattr(const char *path, struct stat *stbuf)
 {
-	int fd = fdc_open(path);
+	fdcent_t *ent = NULL;
+
+	int fd = fdc_open(path, &ent);
 	if (fd < 0)
 		return fd;
+
+	if (ent != NULL) {
+		*stbuf = ent->st;
+		return 0;
+	}
 
 	int res = fstat(fd, stbuf);
 	if (res < 0) {
@@ -500,7 +533,7 @@ static int flt_releasedir(const char *path, struct fuse_file_info *fi)
 
 static int flt_open(const char *path, struct fuse_file_info *fi)
 {
-	int fd = fdc_open(path);
+	int fd = fdc_open(path, NULL);
 	if (fd < 0)
 		return fd;
 

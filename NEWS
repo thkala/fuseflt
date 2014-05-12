@@ -1,8 +1,6 @@
-0.0.5:
-	* Added the ability to use visible temporary files, as a way to avoid
-	  the file descriptor usage limits. As a side-effect, if fuseflt is shot
-	  in the head (kill -9, SIGSEGV and similar) the temporary files will
-	  have to be removed manually. This mode has to be explicitly enabled in
-	  the configuration file.
-	* Ran fuseflt under valgrind and eliminated most memory leaks.
+0.0.6:
+	* Fixed the getattr method to report correct information for converted
+	  files.
+	* The stat(2) information is now cached for converted files - a welcome
+	  side-effect of the getattr fix.
 	* Minor documentation updates

@@ -1,5 +1,12 @@
 1. Items in the ToDo list:
 
+* Perform some security-related tests. Way too many security issues were present
+  in the first testing releases, although they weren't really a problem with the
+  default FUSE options.
+
+* Optimise the code. There are several cases where some stuff - like stat'ing
+  files e.t.c. - happens more than once, instead of reusing the results.
+
 * Examine whether it would be better to remove single cache entries as needed,
   rather than prune a number of them at once, when under high cache pressure.
 
