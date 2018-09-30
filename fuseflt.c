@@ -459,33 +459,37 @@ static int flt_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	DIR *dp = (DIR *) (uintptr_t) fi->fh;
 	struct dirent *de;
 	struct stat st;
+	char name[NAME_MAX+1];
 
+	DBGMSG("flt_readdir: %s offset %ld", path, offset);
 	seekdir(dp, offset);
 	while ((de = readdir(dp)) != NULL) {
-		fstatat(dirfd(dp), de->d_name, &st, 0);
+		strncpy(name, de->d_name, sizeof(name));
+		DBGMSG("flt_readdir in: %s", name);
+		fstatat(dirfd(dp), name, &st, 0);
 
 		if (S_ISREG(st.st_mode)) {
 			int i = 0;
 
-			int l = strlen(de->d_name);
+			int l = strlen(name);
 			while ((ext_in[i] != NULL) && (ext_out[i] != NULL)) {
 				int ixl = strlen(ext_in[i]);
 				int oxl = strlen(ext_out[i]);
 
 				if (((l - ixl) < 1) || ((l - ixl + oxl) > NAME_MAX) ||
-						(strncmp(de->d_name + l - ixl, ext_in[i], ixl) != 0)) {
+						(strncmp(name + l - ixl, ext_in[i], ixl) != 0)) {
 					++i;
 					continue;
 				}
 
-				de->d_name[l - ixl] = '\0';
-				strncat(de->d_name, ext_out[i], NAME_MAX - l + ixl);
+				name[l - ixl] = '\0';
+				strncat(name, ext_out[i], NAME_MAX - l + ixl);
 
 				/* Avoid duplicate filenames */
-				if (fstatat(dirfd(dp), de->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+				if (fstatat(dirfd(dp), name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+					DBGMSG("flt_readdir reversing name change %s", de->d_name);
 					/* Reverse the name change */
-					de->d_name[l - ixl] = '\0';
-					strncat(de->d_name, ext_in[i], NAME_MAX - l + ixl);
+					strncpy(name, de->d_name, sizeof(name));
 				}
 				break;
 			}
@@ -494,10 +498,14 @@ static int flt_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         	memset(&st, 0, sizeof(st));
         	st.st_ino = de->d_ino;
         	st.st_mode = de->d_type << 12;
-        	if (filler(buf, de->d_name, &st, telldir(dp)))
+		DBGMSG("flt_readdir out: %s %ld", name, telldir(dp));
+		if (filler(buf, name, &st, telldir(dp))) {
+			DBGMSG("flt_readdir aborted by filler");
         		break;
+		}
 	}
 
+	DBGMSG("flt_readdir done %ld", telldir(dp));
 	return 0;
 }
 
